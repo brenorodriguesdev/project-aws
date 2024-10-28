@@ -4,12 +4,21 @@ import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as path from 'path';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+
 import { Construct } from 'constructs';
 
 export class ProjectAwsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const transactionsTable = new dynamodb.Table(this, 'TransactionsTable', {
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'MyUserPool',
       selfSignUpEnabled: true,
@@ -57,6 +66,17 @@ export class ProjectAwsStack extends cdk.Stack {
       handler: 'handler.protectedRoute',
     });
 
+    const saveTransactionLambda = new lambda.Function(this, 'SaveTransactionLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'handler.saveTransaction',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      environment: {
+        TRANSACTIONS_TABLE: transactionsTable.tableName,
+      },
+      role: lambdaRole,
+    });
+    
+    transactionsTable.grantReadWriteData(saveTransactionLambda);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',
@@ -72,6 +92,11 @@ export class ProjectAwsStack extends cdk.Stack {
     });
 
     api.root.addResource('protected').addMethod('GET', new apigateway.LambdaIntegration(protectedRouteLambda), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    api.root.addResource('transaction').addMethod('POST', new apigateway.LambdaIntegration(saveTransactionLambda), {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
