@@ -1,5 +1,4 @@
 import { APIGatewayProxyHandler } from 'aws-lambda';
-import { ok } from './utils/http-helper';
 import {
     createUserController,
     authenticateController,
