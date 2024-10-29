@@ -1,6 +1,5 @@
 import { APIGatewayProxyHandler } from "aws-lambda";
 import { validateRequiredFields } from "../utils/validate-required-fields";
-import { createUserService } from "../services/create-user";
 import { badRequest, noContent, ok } from "../utils/http-helper";
 import { saveTransactionService } from "../services/save-transaction";
 
@@ -17,7 +16,8 @@ export const saveTransactionController: APIGatewayProxyHandler = async (event) =
       }
 
       const body = event.body ? JSON.parse(event.body) : {};
-      const error = await saveTransactionService(body)
+      const clientId =  event.requestContext.authorizer?.claims?.sub
+      const error = await saveTransactionService({ ...body, clientId })
       if (error instanceof Error) {
         return badRequest(error.message)
       }

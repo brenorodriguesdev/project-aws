@@ -18,7 +18,13 @@ export class ProjectAwsStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    
+    transactionsTable.addGlobalSecondaryIndex({
+      indexName: 'ClientIdReferenceDateIndex',
+      partitionKey: { name: 'clientId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'referenceDate', type: dynamodb.AttributeType.STRING },
+    });
+
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'MyUserPool',
       selfSignUpEnabled: true,
@@ -71,12 +77,21 @@ export class ProjectAwsStack extends cdk.Stack {
       handler: 'handler.saveTransaction',
       code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
       environment: {
-        TRANSACTIONS_TABLE: transactionsTable.tableName,
+        TABLE: transactionsTable.tableName,
       },
       role: lambdaRole,
     });
-    
-    transactionsTable.grantReadWriteData(saveTransactionLambda);
+
+    transactionsTable.grant(saveTransactionLambda, 'dynamodb:PutItem');
+
+    const tablePolicy = new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'],
+      resources: [transactionsTable.tableArn],
+      principals: [new iam.ArnPrincipal(lambdaRole.roleArn)],
+    });
+
+    transactionsTable.addToResourcePolicy(tablePolicy);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',

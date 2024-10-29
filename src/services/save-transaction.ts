@@ -13,7 +13,7 @@ interface Transaction {
     clientId: string;
     value: number;
     type: 'incoming' | 'expense';
-    created_at: string;
+    createdAt: string;
     referenceDate: Date;
 }
 
@@ -39,12 +39,13 @@ export const saveTransactionService = async (
             clientId,
             value,
             type,
-            created_at: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             referenceDate,
         };
 
+
         await dynamodb.put({
-            TableName: 'TransactionsTable',
+            TableName: String(process.env.TABLE),
             Item: transaction,
         }).promise();
 
