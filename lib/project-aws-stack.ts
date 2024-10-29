@@ -12,6 +12,19 @@ export class ProjectAwsStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const billingsTable = new dynamodb.Table(this, 'BillingsTable', {
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+
+    billingsTable.addGlobalSecondaryIndex({
+      indexName: 'ClientIdReferenceDateIndex',
+      partitionKey: { name: 'clientId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'referenceDate', type: dynamodb.AttributeType.STRING },
+    });
+
     const transactionsTable = new dynamodb.Table(this, 'TransactionsTable', {
       partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -86,8 +99,19 @@ export class ProjectAwsStack extends cdk.Stack {
       role: lambdaRole,
     });
 
+    const getBillingsLambda = new lambda.Function(this, 'GetBillingsLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'handler.getBillings',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      environment: {
+        TABLE: billingsTable.tableName,
+      },
+      role: lambdaRole,
+    });
+
     transactionsTable.grantWriteData(saveTransactionLambda);
     transactionsTable.grantReadData(getTransactionsLambda);
+    billingsTable.grantReadData(getBillingsLambda);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',
@@ -113,5 +137,10 @@ export class ProjectAwsStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
+    api.root.addResource('billing').addMethod('GET', new apigateway.LambdaIntegration(getBillingsLambda), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    })
+    
   }
 }
