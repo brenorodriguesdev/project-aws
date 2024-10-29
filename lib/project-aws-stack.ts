@@ -66,12 +66,6 @@ export class ProjectAwsStack extends cdk.Stack {
       role: lambdaRole,
     });
 
-    const protectedRouteLambda = new lambda.Function(this, 'ProtectedRouteLambda', {
-      runtime: lambda.Runtime.NODEJS_20_X,
-      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
-      handler: 'handler.protectedRoute',
-    });
-
     const saveTransactionLambda = new lambda.Function(this, 'SaveTransactionLambda', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'handler.saveTransaction',
@@ -82,16 +76,18 @@ export class ProjectAwsStack extends cdk.Stack {
       role: lambdaRole,
     });
 
-    transactionsTable.grant(saveTransactionLambda, 'dynamodb:PutItem');
-
-    const tablePolicy = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ['dynamodb:PutItem', 'dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:BatchWriteItem'],
-      resources: [transactionsTable.tableArn],
-      principals: [new iam.ArnPrincipal(lambdaRole.roleArn)],
+    const getTransactionsLambda = new lambda.Function(this, 'GetTransactionsLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'handler.getTransactions',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      environment: {
+        TABLE: transactionsTable.tableName,
+      },
+      role: lambdaRole,
     });
 
-    transactionsTable.addToResourcePolicy(tablePolicy);
+    transactionsTable.grantWriteData(saveTransactionLambda);
+    transactionsTable.grantReadData(getTransactionsLambda);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',
@@ -106,14 +102,16 @@ export class ProjectAwsStack extends cdk.Stack {
       identitySource: 'method.request.header.Authorization',
     });
 
-    api.root.addResource('protected').addMethod('GET', new apigateway.LambdaIntegration(protectedRouteLambda), {
+    const resource = api.root.addResource('transaction')
+
+    resource.addMethod('GET', new apigateway.LambdaIntegration(getTransactionsLambda), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    })
+    resource.addMethod('POST', new apigateway.LambdaIntegration(saveTransactionLambda), {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
-    api.root.addResource('transaction').addMethod('POST', new apigateway.LambdaIntegration(saveTransactionLambda), {
-      authorizer,
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-    });
   }
 }

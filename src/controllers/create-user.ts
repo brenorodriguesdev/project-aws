@@ -1,7 +1,7 @@
 import { APIGatewayProxyHandler } from "aws-lambda";
 import { validateRequiredFields } from "../utils/validate-required-fields";
 import { createUserService } from "../services/create-user";
-import { badRequest, noContent, ok } from "../utils/http-helper";
+import { badRequest, noContent } from "../utils/http-helper";
 
 export const createUserController: APIGatewayProxyHandler = async (event) => {
 
