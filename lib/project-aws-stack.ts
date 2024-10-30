@@ -53,6 +53,18 @@ export class ProjectAwsStack extends cdk.Stack {
     });
 
 
+    const messagesTable = new dynamodb.Table(this, 'MessagesTable', {
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    messagesTable.addGlobalSecondaryIndex({
+      indexName: 'FromClientIdIndex',
+      partitionKey: { name: 'fromClientId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'MyUserPool',
       selfSignUpEnabled: true,
@@ -143,17 +155,31 @@ export class ProjectAwsStack extends cdk.Stack {
       },
       role: lambdaRole,
     });
-    
+
+    const sendMessageLambda = new lambda.Function(this, 'SendMessageLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'handler.sendMessage',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      environment: {
+        MESSAGES_TABLE: messagesTable.tableName,
+        CONNECTIONS_TABLE: connectionsTable.tableName,
+      },
+      role: lambdaRole,
+    });
+
     transactionsTable.grantWriteData(saveTransactionLambda);
     transactionsTable.grantReadData(getTransactionsLambda);
     billingsTable.grantReadData(getBillingsLambda);
     connectionsTable.grantWriteData(connectLambda);
     connectionsTable.grantWriteData(disconnectLambda);
+    messagesTable.grantWriteData(sendMessageLambda);
+    connectionsTable.grantReadData(sendMessageLambda);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',
       description: 'API para invocar a função Lambda.',
     });
+
 
     api.root.addResource('authenticate').addMethod('POST', new apigateway.LambdaIntegration(authenticateLambda));
     api.root.addResource('create-user').addMethod('POST', new apigateway.LambdaIntegration(createUserLambda));
@@ -179,7 +205,8 @@ export class ProjectAwsStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     })
 
-
+    const sendMessageResource = api.root.addResource('send-message');
+    sendMessageResource.addMethod('POST', new apigateway.LambdaIntegration(sendMessageLambda));
 
     const webSocketApi = new apigatewayv2.WebSocketApi(this, 'WebSocketApi', {
       connectRouteOptions: {
@@ -195,6 +222,8 @@ export class ProjectAwsStack extends cdk.Stack {
       stageName: 'dev',
       autoDeploy: true,
     });
+
+    sendMessageLambda.addEnvironment('WEBSOCKET_ENDPOINT', webSocketStage.url);
 
     new cdk.CfnOutput(this, 'WebSocketUrl', {
       value: webSocketStage.url,
