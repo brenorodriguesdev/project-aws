@@ -65,6 +65,12 @@ export class ProjectAwsStack extends cdk.Stack {
       sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
     });
 
+    messagesTable.addGlobalSecondaryIndex({
+      indexName: 'ToClientIdIndex',
+      partitionKey: { name: 'toClientId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    });
+
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'MyUserPool',
       selfSignUpEnabled: true,
@@ -167,6 +173,17 @@ export class ProjectAwsStack extends cdk.Stack {
       role: lambdaRole,
     });
 
+    const readMessagesLambda = new lambda.Function(this, 'ReadMessagesLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'handler.readMessages',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      environment: {
+        TBLE: messagesTable.tableName,
+      },
+      role: lambdaRole,
+    });
+
+
     transactionsTable.grantWriteData(saveTransactionLambda);
     transactionsTable.grantReadData(getTransactionsLambda);
     billingsTable.grantReadData(getBillingsLambda);
@@ -174,6 +191,7 @@ export class ProjectAwsStack extends cdk.Stack {
     connectionsTable.grantWriteData(disconnectLambda);
     messagesTable.grantWriteData(sendMessageLambda);
     connectionsTable.grantReadData(sendMessageLambda);
+    messagesTable.grantReadWriteData(readMessagesLambda);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',
@@ -206,7 +224,16 @@ export class ProjectAwsStack extends cdk.Stack {
     })
 
     const sendMessageResource = api.root.addResource('send-message');
-    sendMessageResource.addMethod('POST', new apigateway.LambdaIntegration(sendMessageLambda));
+    sendMessageResource.addMethod('POST', new apigateway.LambdaIntegration(sendMessageLambda), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    const readMessagesResource = api.root.addResource('read-messages');
+    readMessagesResource.addMethod('POST', new apigateway.LambdaIntegration(readMessagesLambda), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     const webSocketApi = new apigatewayv2.WebSocketApi(this, 'WebSocketApi', {
       connectRouteOptions: {
