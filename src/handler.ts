@@ -4,7 +4,9 @@ import {
     authenticateController,
     saveTransactionController,
     getTransactionsController,
-    getBillingsController
+    getBillingsController,
+    onDisconnectController,
+    onConnectController
 } from './controllers';
 
 export const createUser: APIGatewayProxyHandler = createUserController
@@ -12,3 +14,5 @@ export const authenticate: APIGatewayProxyHandler = authenticateController
 export const saveTransaction: APIGatewayProxyHandler = saveTransactionController
 export const getTransactions: APIGatewayProxyHandler = getTransactionsController
 export const getBillings: APIGatewayProxyHandler = getBillingsController
+export const onDisconnect: APIGatewayProxyHandler = onDisconnectController
+export const onConnect: APIGatewayProxyHandler = onConnectController

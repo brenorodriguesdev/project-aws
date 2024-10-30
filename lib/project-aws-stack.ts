@@ -1,6 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
+import * as apigatewayv2_integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as path from 'path';
@@ -35,6 +37,19 @@ export class ProjectAwsStack extends cdk.Stack {
       indexName: 'ClientIdReferenceDateIndex',
       partitionKey: { name: 'clientId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'referenceDate', type: dynamodb.AttributeType.STRING },
+    });
+
+    const connectionsTable = new dynamodb.Table(this, 'ConnectionsTable', {
+      partitionKey: { name: 'connectionId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+
+    connectionsTable.addGlobalSecondaryIndex({
+      indexName: 'ClientIdConnectAtIndex',
+      partitionKey: { name: 'clientId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'connectAt', type: dynamodb.AttributeType.STRING },
     });
 
 
@@ -109,9 +124,31 @@ export class ProjectAwsStack extends cdk.Stack {
       role: lambdaRole,
     });
 
+    const connectLambda = new lambda.Function(this, 'ConnectLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      handler: 'handler.onConnect',
+      environment: {
+        TABLE: connectionsTable.tableName,
+      },
+      role: lambdaRole,
+    });
+
+    const disconnectLambda = new lambda.Function(this, 'DisconnectLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
+      handler: 'handler.onDisconnect',
+      environment: {
+        TABLE: connectionsTable.tableName,
+      },
+      role: lambdaRole,
+    });
+    
     transactionsTable.grantWriteData(saveTransactionLambda);
     transactionsTable.grantReadData(getTransactionsLambda);
     billingsTable.grantReadData(getBillingsLambda);
+    connectionsTable.grantWriteData(connectLambda);
+    connectionsTable.grantWriteData(disconnectLambda);
 
     const api = new apigateway.RestApi(this, 'MeuApiGateway', {
       restApiName: 'MeuApiGateway',
@@ -141,6 +178,26 @@ export class ProjectAwsStack extends cdk.Stack {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     })
-    
+
+
+
+    const webSocketApi = new apigatewayv2.WebSocketApi(this, 'WebSocketApi', {
+      connectRouteOptions: {
+        integration: new apigatewayv2_integrations.WebSocketLambdaIntegration('ConnectIntegration', connectLambda),
+      },
+      disconnectRouteOptions: {
+        integration: new apigatewayv2_integrations.WebSocketLambdaIntegration('DisconnectIntegration', disconnectLambda),
+      },
+    });
+
+    const webSocketStage = new apigatewayv2.WebSocketStage(this, 'WebSocketStage', {
+      webSocketApi,
+      stageName: 'dev',
+      autoDeploy: true,
+    });
+
+    new cdk.CfnOutput(this, 'WebSocketUrl', {
+      value: webSocketStage.url,
+    });
   }
 }
