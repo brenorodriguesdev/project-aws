@@ -31,7 +31,7 @@ export const createEventService = async (
 
     try {
         const dynamodb = new DynamoDB.DocumentClient();
-        const transaction: Event = {
+        const event: Event = {
             id: uuidv4(),
             clientId,
             title,
@@ -43,7 +43,7 @@ export const createEventService = async (
 
         await dynamodb.put({
             TableName: String(process.env.TABLE),
-            Item: transaction,
+            Item: event,
         }).promise();
 
     } catch (error) {
